@@ -25,6 +25,8 @@ public:
 
 class FSMState {
 
+//Representa un estado de la maquina de estados finitos
+//Tiene funciones para saber cuando entra, cuando sale y cuando se actualiza el estado
 public:
 	FSMState(std::shared_ptr<Character> _character);
 	virtual void onEnter(const GameState& gs);
@@ -42,6 +44,8 @@ protected:
 
 class FiniteStateMachine {
 
+//Es el controlador que maneja en que estado esta acutualmente el personaje
+// y que transiciones se pueden dar
 public:
 	FiniteStateMachine(std::shared_ptr<Character> _character);
 	virtual Move update(const GameState& gs)=0;

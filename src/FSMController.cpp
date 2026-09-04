@@ -30,6 +30,9 @@ PillTransition::PillTransition(std::shared_ptr<FSMState> next):last(0),_next(nex
 
 }
 
+//Pregunta cuantas pildoras quedan en el laberinto
+//Si el numero de pildoras es multiplo de 20 y es distinto al ultimo que se guardo
+//entonces se activa la transicion
 bool PillTransition::isValid(const GameState& gs){
 	int quedan=gs.getMaze().getPillPositions().size();
 	if(last!=quedan && quedan%20==0){
@@ -42,6 +45,32 @@ std::shared_ptr<FSMState> PillTransition::getNextState(){
 	return _next;
 }
 
+////TimeTransition////
+TimeTransition::TimeTransition(std::shared_ptr<FSMState> next,int _segundos):segundos(_segundos),_next(next){
+	//me aseguro de que el reloj se inicializa en el momento
+	resetTimer();
+}
+
+//actializo la variable reloj con la hora actual
+void TimeTransition::resetTimer(){
+	reloj=std::chrono::high_resolution_clock::now();
+}
+
+bool TimeTransition::isValid(const GameState&){
+	//Esto es para calcular si pasaron los segundos que se le pasaron al constructor
+	auto ahora=std::chrono::high_resolution_clock::now();
+	std::chrono::duration<double> duracion=ahora-reloj;
+
+	if(duracion.count()>=segundos){
+		resetTimer();
+		return true;
+	}
+	return false;
+}
+
+std::shared_ptr<FSMState> TimeTransition::getNextState(){
+	return _next;
+}
 
 
 ///////////////////////////////ChaseState///////////////////////////////////////
@@ -82,10 +111,127 @@ ChaseState::~ChaseState(){
 
 }
 
+////ScatterState////
+//El contructor recibe el fantasma y el objetivo al que se quiere ir
+ScatterState::ScatterState(std::shared_ptr<Character> _character, std::pair<int, int> objetivo):FSMState(_character), objetivo(objetivo){
+
+}
+
+//Cuando se entra al estado se invierte la direccion del fantasma
+void ScatterState::onEnter(const GameState& ){
+	std::dynamic_pointer_cast<Ghost>(character)->revert();
+}
+
+Move ScatterState::onUpdate(const GameState& game){
+	std::vector<Move> moves;
+	const auto myPos=character->getPos();
+
+	//Preguntamos cuales son los movimientos legales del fantasma
+	if(character->getDirection()==PASS){
+		moves=game.getMaze().getPossibleMoves(myPos);
+	}else{
+		//Si es que ya esta en movimiento
+		moves=game.getMaze().getGhostLegalMoves(myPos,character->getDirection());
+	}
+
+	float minMoveDist = 10000000;
+	int minI=0;
+
+	//Se revisa cada movimiento posible
+	for(unsigned int i=0;i<moves.size();i++){
+		auto baldosa=game.getMaze().getNeighbour(myPos,moves[i]);
+		if(baldosa<0) continue;//Si es una pared se ingnora;
+
+		//se traduce el numero en coordenadas para poder calcular la distancia
+		auto baldosaCoord=game.getMaze().getNodePos(baldosa);
+
+		float sqDist=euclid2(baldosaCoord,objetivo);
+
+
+		if(sqDist<minMoveDist){
+			minMoveDist=sqDist;
+			minI=i;
+		}
+	}
+	return moves[minI];
+
+}
+
+ScatterState::~ScatterState(){
+
+}
+
+/*Codigo de pacmanDTController.cpp
+	}else{
+		float maxMoveDist = -1;
+        
+        for(Move m : moves) {
+            int vecino = game.getMaze().getNeighbour(pacmanNode, m);
+            if(vecino < 0) continue; 
+            
+            auto vecinoCoords = game.getMaze().getNodePos(vecino);
+            float sqDist = euclid2(vecinoCoords, targetGhostCoords); 
+            
+            if(sqDist > maxMoveDist) {
+                maxMoveDist = sqDist;
+                bestMove = m;
+			}
+		}
+	}
+	return bestMove;	
+}*/
+
+
+////NonFrightened////
+NonFrightened::NonFrightened(std::shared_ptr<Character> _character):FSMState(_character){
+
+	//Creamos los subestados
+	auto chase=std::make_shared<ChaseState>(character);
+	auto scatter=std::make_shared<ScatterState>(character,std::make_pair(0,0));
+	
+	//Creamos las transiciones
+	auto toChase=std::make_shared<TimeTransition>(chase, 7);
+	auto toScatter=std::make_shared<TimeTransition>(scatter, 20);
+
+	//Los conecto entre si
+	scatter->addTransition(toChase);
+	chase->addTransition(toScatter);
+
+	//Defino el subestado inicial
+	subEstadoActual = scatter;
+}
+
+NonFrightened::~NonFrightened(){
+}
+
+void NonFrightened::onEnter(const GameState& gs){
+	//comieza a usar el estado inicial
+	if(subEstadoActual!=nullptr){
+		subEstadoActual->onEnter(gs);
+	}
+}
+
+Move NonFrightened::onUpdate(const GameState& gs){
+	if(subEstadoActual!=nullptr){
+		//revisamps si algun cronometro termino
+		auto t=subEstadoActual->getActiveTransition(gs);
+		//cambiamos si el tiempo termino
+		if(t!=nullptr){
+			subEstadoActual->onExit(gs);
+			t->onTransition(gs);
+			subEstadoActual=t->getNextState();
+			subEstadoActual->onEnter(gs);
+		}
+		//al estado actual le pedimos que nos diga que movimiento hacer
+		return subEstadoActual->onUpdate(gs);
+	}
+	//si algo falla se queda quieto
+	return PASS;
+}
 
 /////////////////////////////////////BlinkyStateMachine/////////////////////////////
 ExampleStateMachine::ExampleStateMachine(std::shared_ptr<Character> _character):FiniteStateMachine(_character){
-	initialState = std::make_shared<ChaseState>(character);
+	initialState = std::make_shared<NonFrightened>(character);
 	activeState=initialState;
 	states.push_back(initialState);
 	activeState->addTransition(std::make_shared<PillTransition>(activeState)); // Arreglar
