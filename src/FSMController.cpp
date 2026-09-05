@@ -78,6 +78,7 @@ ChaseState::ChaseState(std::shared_ptr<Character> _character):FSMState(_characte
 
 }
 void ChaseState::onEnter(const GameState& ){
+	std::cout << "Azul entro a CHASE" << std::endl;
 	std::dynamic_pointer_cast<Ghost>(character)->revert();
 }
 Move ChaseState::onUpdate(const GameState& game){
@@ -119,6 +120,7 @@ ScatterState::ScatterState(std::shared_ptr<Character> _character, std::pair<int,
 
 //Cuando se entra al estado se invierte la direccion del fantasma
 void ScatterState::onEnter(const GameState& ){
+	std::cout << "Azul entro a SCATTER" << std::endl;
 	std::dynamic_pointer_cast<Ghost>(character)->revert();
 }
 
